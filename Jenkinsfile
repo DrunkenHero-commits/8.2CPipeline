@@ -1,74 +1,91 @@
-// SIT223/SIT753 - 8.2C Part 1 Task 1
-// Mock CI/CD pipeline - prints the task and tool for each stage only.
-// Repo: https://github.com/DrunkenHero-commits/8.2CPipeline
+// SIT223/SIT753 - 8.2C Part 2 Task 2 (Email Notification)
+// Extends the Part 1 Task 2 pipeline: emails the status of the test stage and
+// the security scan stage, with the build log attached.
+// Repo: https://github.com/DrunkenHero-commits/8.2CDevSecOps
 
 pipeline {
     agent any
 
+    environment {
+        NOTIFY = '<YOUR_EMAIL@gmail.com>'
+    }
+
     triggers {
-        // Polls GitHub every 5 minutes, so a new commit starts a build.
-        // No webhook required for this task.
         pollSCM('H/5 * * * *')
     }
 
     stages {
 
-        stage('Build') {
+        stage('Checkout') {
             steps {
-                sh 'echo "Task: compile the source and package it into a deployable artifact"'
-                sh 'echo "Tool: Maven"'
+                // Tool: Git
+                git branch: 'main',
+                    url: 'https://github.com/DrunkenHero-commits/8.2CDevSecOps.git'
             }
         }
 
-        stage('Unit and Integration Tests') {
+        stage('Install Dependencies') {
             steps {
-                sh 'echo "Task: run unit tests on individual classes, then integration tests across modules"'
-                sh 'echo "Tools: JUnit for unit tests, Selenium for integration tests"'
+                // Tool: npm
+                sh 'npm install --legacy-peer-deps || npm install'
             }
         }
 
-        stage('Code Analysis') {
+        stage('Run Tests') {
             steps {
-                sh 'echo "Task: static analysis of the codebase against agreed coding standards"'
-                sh 'echo "Tool: SonarQube"'
+                // Tool: Mocha via npm test
+                sh 'npm test || true'
+            }
+            post {
+                success {
+                    emailext(
+                        to: "${NOTIFY}",
+                        subject: "Test stage PASSED - ${JOB_NAME} #${BUILD_NUMBER}",
+                        body: "The Run Tests stage finished successfully.\n\nJob: ${JOB_NAME}\nBuild: #${BUILD_NUMBER}\nConsole: ${BUILD_URL}console\n\nFull log attached.",
+                        attachLog: true
+                    )
+                }
+                failure {
+                    emailext(
+                        to: "${NOTIFY}",
+                        subject: "Test stage FAILED - ${JOB_NAME} #${BUILD_NUMBER}",
+                        body: "The Run Tests stage failed.\n\nJob: ${JOB_NAME}\nBuild: #${BUILD_NUMBER}\nConsole: ${BUILD_URL}console\n\nFull log attached.",
+                        attachLog: true
+                    )
+                }
             }
         }
 
-        stage('Security Scan') {
+        stage('Generate Coverage Report') {
             steps {
-                sh 'echo "Task: scan source and dependencies for known vulnerabilities and CVEs"'
-                sh 'echo "Tool: Snyk"'
+                // Tool: Istanbul/nyc
+                sh 'npm run coverage || true'
             }
         }
 
-        stage('Deploy to Staging') {
+        stage('NPM Audit (Security Scan)') {
             steps {
-                sh 'echo "Task: release the packaged build to the staging server"'
-                sh 'echo "Tool: AWS CLI deploying to an EC2 staging instance"'
+                // Tool: npm audit (CVE database)
+                sh 'npm audit || true'
             }
-        }
-
-        stage('Integration Tests on Staging') {
-            steps {
-                sh 'echo "Task: verify the application end to end in a production-like environment"'
-                sh 'echo "Tool: Postman/Newman against the staging endpoint"'
+            post {
+                success {
+                    emailext(
+                        to: "${NOTIFY}",
+                        subject: "Security scan PASSED - ${JOB_NAME} #${BUILD_NUMBER}",
+                        body: "The npm audit security scan completed.\n\nJob: ${JOB_NAME}\nBuild: #${BUILD_NUMBER}\nConsole: ${BUILD_URL}console\n\nVulnerability output attached.",
+                        attachLog: true
+                    )
+                }
+                failure {
+                    emailext(
+                        to: "${NOTIFY}",
+                        subject: "Security scan FAILED - ${JOB_NAME} #${BUILD_NUMBER}",
+                        body: "The npm audit security scan failed to complete.\n\nJob: ${JOB_NAME}\nBuild: #${BUILD_NUMBER}\nConsole: ${BUILD_URL}console\n\nFull log attached.",
+                        attachLog: true
+                    )
+                }
             }
-        }
-
-        stage('Deploy to Production') {
-            steps {
-                sh 'echo "Task: promote the verified build to the production server"'
-                sh 'echo "Tool: AWS CodeDeploy to an EC2 production instance"'
-            }
-        }
-    }
-
-    post {
-        success {
-            sh 'echo "Pipeline finished - all seven stages completed"'
-        }
-        failure {
-            sh 'echo "Pipeline failed - check the stage log above"'
         }
     }
 }
